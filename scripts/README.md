@@ -7,6 +7,55 @@
 授权 code/加密包等调用形式。青龙不再直接订阅原仓库，防止更新覆盖适配层；配置、
 青龙任务统一使用 `task 525815266_YYB-Go-Enhanced/scripts/脚本名.py`，脚本由本仓库审核发布。
 
+## 青龙脚本拉取工具
+
+Issue #66 中出现的 `Tuple[Dict[str, str] ...`、`str) ->` 等任务名，不是脚本原本的名称。
+青龙自动添加任务时会在整个 Python 文件中宽泛搜索 `name:`，函数类型标注中的
+`account_name: str` 因此被误当成任务名。本仓库已为可订阅脚本补齐文件头部的
+`# name:` / `// name:` 元数据，并提供 [`tools/yyb-scriptctl.sh`](../tools/yyb-scriptctl.sh)
+把“下载脚本”和“创建任务”拆成明确的操作。
+
+先在青龙容器内安装管理工具：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/525815266/YYB-Go-Enhanced/main/tools/yyb-scriptctl.sh \
+  -o /ql/data/scripts/yyb-scriptctl.sh
+chmod +x /ql/data/scripts/yyb-scriptctl.sh
+```
+
+拉取整个 `scripts/` 目录，**不创建任务**：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh sync
+```
+
+只拉取一个脚本，**不创建任务**：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh pull 麦富迪_code版.py
+```
+
+拉取一个脚本并创建或更新青龙任务：
+
+```bash
+bash /ql/data/scripts/yyb-scriptctl.sh install 麦富迪_code版.py \
+  --cron "13 1 * * *" --name "麦富迪"
+```
+
+脚本头部已有 `# cron:` 时可以省略 `--cron`。没有 cron 元数据时，`install` 会完成下载
+但拒绝创建任务，必须由用户明确传入执行时间；不会再给所有脚本套用同一个随机时间。
+工具按完整任务命令查重，再次执行 `install` 会更新原任务的名称和 cron，不会重复创建。
+
+默认目录对应青龙订阅名 `525815266_YYB-Go-Enhanced_main`。如果实际目录不同，可设置：
+
+```bash
+export YYB_SCRIPT_DIR=/ql/data/scripts/你的仓库目录/scripts
+export YYB_TASK_PREFIX=你的仓库目录/scripts
+```
+
+不建议对整个仓库开启青龙的“自动添加任务”：部分脚本是公共模块或没有统一适用的执行时间。
+旧任务不会被 Git 拉取动作自动重命名，可对需要的脚本执行一次 `install` 更新，或删除旧任务后重建。
+
 本次同步的 3 个脚本：
 
 - `心相印_code版.py`：采用最新心相印 AppID 和恒安 `wxappLogin` 登录/签到接口，保留 token 缓存与备用后端。
@@ -32,9 +81,12 @@
 - `YYB_ACCOUNT_STATUS_FILE` 可自定义缓存路径；缓存采用临时文件原子替换，适合多任务并发读写。
 
 青龙新增任务 `YYB账号状态检查.py`，建议每 12 小时运行一次。由于开启网页登录
-认证后 `/accounts` 不能被青龙匿名读取，该任务只探测 YYB `/healthz` 并清理不在
+认证后 `/accounts` 不能被青龙匿名读取，该任务只探测 YYB `/health` 并清理不在
 `YYB_SERVER` 的缓存条目，不调用业务接口，也不会制造未消费的 `wx.login code`。
 业务脚本遇到明确的未授权响应后负责写回缓存。
+
+v0.2.19 起服务端也兼容旧脚本的 `/healthz`。同一服务地址只探测一次（失败也不重复），
+并校验 YYB JSON 响应，防止反向代理返回 HTML 页面被误判为健康。服务可达不代表微信账号有效。
 
 这个目录收录了对 `SuperNaiBA/YYB-GO-Script` 中已确认报错脚本的最小修复版，用于 YYB Go 多账号调用。
 

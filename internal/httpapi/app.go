@@ -29,6 +29,7 @@ import (
 type Config struct {
 	MaintenanceSocket string
 	ResourceRoot      string
+	EmbeddedWebAssets bool
 	DBFilename        string
 	TCPProxy          string
 	SessionTTL        time.Duration
@@ -132,7 +133,7 @@ func NewApp(cfg Config) (*App, error) {
 	if cfg.SessionDuration <= 0 {
 		cfg.SessionDuration = 7 * 24 * time.Hour
 	}
-	res, err := ensureResources(cfg.ResourceRoot)
+	res, err := ensureResources(cfg.ResourceRoot, cfg.EmbeddedWebAssets)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +172,7 @@ func NewApp(cfg Config) (*App, error) {
 	pool := protocol.NewPool(poolCfg, db)
 	qrClient := qr.NewClient(cfg.RequestTimeout)
 	app := &App{
-		updates:            &updateChecker{client: &http.Client{Timeout: 10 * time.Second}, url: maintenanceVersionURL},
+		updates:            &updateChecker{client: &http.Client{Timeout: 10 * time.Second}, url: maintenanceVersionURL, fallbackURL: maintenanceVersionAPIURL},
 		cfg:                cfg,
 		resources:          res,
 		db:                 db,
@@ -254,9 +255,12 @@ func (a *App) Handler() http.Handler {
 	router.Any("/login", gin.WrapF(a.handleLogin))
 	router.Any("/register", gin.WrapF(a.handleRegister))
 	router.Any("/logout", gin.WrapF(a.handleLogout))
-	router.Any("/health", func(c *gin.Context) {
+	healthHandler := func(c *gin.Context) {
 		writeJSON(c.Writer, http.StatusOK, gin.H{"ok": true})
-	})
+	}
+	router.Any("/health", healthHandler)
+	// Compatibility for older copies of the public account cache checker.
+	router.Any("/healthz", healthHandler)
 	router.Use(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
 			c.Header("Cache-Control", "no-cache")
